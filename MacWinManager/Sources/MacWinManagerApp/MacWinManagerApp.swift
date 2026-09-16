@@ -1483,6 +1483,7 @@ private struct MacWinRootView: View {
 
     var body: some View {
         ContentView()
+            .overlay(alignment: .bottomTrailing) { ResourceConsumptionView().padding(12) }
             .environmentObject(store)
             .frame(minWidth: 1040, minHeight: 700)
             .ignoresSafeArea(.container, edges: .top)
