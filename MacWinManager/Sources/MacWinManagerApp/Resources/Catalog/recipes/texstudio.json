@@ -38,7 +38,7 @@
       "envOverrides" : {
 
       },
-      "exePath" : "C:\\Program Files\\TeXstudio\\texstudio.exe",
+      "exePath" : "C:\\Program Files\\texstudio\\texstudio.exe",
       "id" : "texstudio",
       "showInHome" : true
     }
