@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "notes": "Existing native fields remain authoritative. Marketing/product version and build number are independent; toolchain, SDK and immutable migration baseline versions are excluded.",
+  "units": {
+    "product": {
+      "path": "MacWinManager/Tools/package-app.sh",
+      "adapter": "embedded-plist",
+      "key": "CFBundleShortVersionString",
+      "format": "marketing"
+    },
+    "build": {
+      "path": "MacWinManager/Tools/package-app.sh",
+      "adapter": "embedded-plist",
+      "key": "CFBundleVersion",
+      "format": "build"
+    }
+  },
+  "source_fingerprints": {
+    "MacWinManager/Tools/package-app.sh": "79cb0d4ba1a6c09736214533754ecaee1d41bb6029966d98ec1fdfaecf59438d"
+  }
+}
