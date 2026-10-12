@@ -1,0 +1,21 @@
+# Optional Wine window-control permission recovery
+
+This is a repair to the existing Wine focus/repair path. It does not change frozen migration assets or the baseline tag.
+
+Launching Wine remains available without Accessibility/Automation. Automatic focus is now a prepared, **explicit per-operation** action: launch/smoke paths queue the existing script but never start System Events or request consent. Select **Window control → Run window control** for the newest, still-running Wine process. This extra optional click can show macOS consent. Canceling or dismissing never executes the script; manual window selection remains available.
+
+The pending action is consume-once, tagged with a request ID and bound to the original live `Process`. Replacement, cancellation, late callbacks and an exited process prevent stale execution. The script is scoped to that original PID instead of selecting an unrelated Wine application. Wine launches that delegate to another process can require manual focus; no unrelated process is silently substituted.
+
+The existing Settings view includes contextual recovery. Request Accessibility is a user-only action and reports current trust, since the prompt is asynchronous. Request System Events is a separate explicit action for that target. Recheck and app activation refresh caller status without prompting. Settings links are best-effort, with checked launch results and manual Privacy & Security instructions.
+
+Parent AX/Automation checks are **informational only** and never gate the queued helper action. They cannot prove `osascript`'s responsible identity or successful window control. Unknown native codes stay unknown; consent-needed does not mean "never asked". Actual helper stderr, exit code, timeout and launch failure are handled independently. Nested AppleScript probes propagate `-1743` and explicit assistive-access failures; an absent target returns an ordinary operation failure. Generic `-1719` errors are not automatically classified as Accessibility denial. Manual interaction remains available after every failure.
+
+`Tools/package-app.sh` generates `MacWin Manager.app/Contents/Info.plist` with `NSAppleEventsUsageDescription` for System Events focus and optional repair. Its existing ad-hoc development signing is unchanged. The current script does not enable hardened runtime; no broad entitlement was added. If a Developer ID/hardened-runtime release path is introduced, it must explicitly include the narrow Apple-events entitlement and verify the final app and helper chain. Never disable signing/runtime protections to make a permission test pass.
+
+## Native release gate
+
+The Linux environment can run repository-contract/asset-integrity checks and inspect source/plist generation, but it cannot compile Swift/AppKit, execute AppleScript or validate TCC/signatures. Eight added Swift unit tests (500 current Swift tests total, including the existing 492) must be run with `swift test --package-path MacWinManager` on both supported architectures before release. Package and inspect the actual `dev.local.macwin.manager` app, including `codesign -d --entitlements :-` and designated requirements. Verify which app/host appears in Accessibility and Automation for installed, development, updated and helper-launched flows.
+
+Use a fresh macOS test account/VM snapshot for first request. Cover allow, deny, unknown/preflight failure, Settings return, revoked access, no target window, native activation/AX error, timeout, repeated request clicks and app update. No smoke or test command in Linux executes AppleScript, posts input, changes TCC or closes a user's application. No native permission success is claimed by the source repair.
+
+Sources: [AX request](https://developer.apple.com/documentation/applicationservices/1459186-axisprocesstrustedwithoptions), [target-specific Automation](https://developer.apple.com/documentation/coreservices/3025784-aedeterminepermissiontoautomatet), [System Events UI scripting](https://developer.apple.com/library/archive/documentation/LanguagesUtilities/Conceptual/MacAutomationScriptingGuide/AutomatetheUserInterface.html), [Apple-events entitlement](https://developer.apple.com/documentation/bundleresources/entitlements/com.apple.security.automation.apple-events).

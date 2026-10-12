@@ -77,6 +77,7 @@ plist = {
     "LSApplicationCategoryType": "public.app-category.utilities",
     "LSMinimumSystemVersion": "14.0",
     "NSHighResolutionCapable": True,
+    "NSAppleEventsUsageDescription": "MacWin Manager uses System Events to focus Wine application windows and perform optional window repair actions you enable.",
     "CFBundleDocumentTypes": [
         {
             "CFBundleTypeExtensions": ["exe"],

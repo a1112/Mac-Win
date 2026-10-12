@@ -328,7 +328,7 @@ public struct WineRunner {
             throw MacWinError.processLaunchFailed(error.localizedDescription)
         }
 
-        activateWineApplicationIfNeeded(for: request, environment: environment)
+        activateWineApplicationIfNeeded(for: request, environment: environment, launchedProcess: process)
 
         process.waitUntilExit()
         if environment["MACWIN_ONLYOFFICE_RENDERER_FONT_REPAIR"] == "1" {
@@ -457,7 +457,7 @@ public struct WineRunner {
             throw MacWinError.processLaunchFailed(error.localizedDescription)
         }
 
-        activateWineApplicationIfNeeded(for: request, environment: environment)
+        activateWineApplicationIfNeeded(for: request, environment: environment, launchedProcess: process)
 
         let timeout = max(timeoutSeconds, 1)
         var timedOut = false
@@ -785,7 +785,7 @@ public struct WineRunner {
             throw MacWinError.processLaunchFailed(error.localizedDescription)
         }
 
-        activateWineApplicationIfNeeded(for: request, environment: environment)
+        activateWineApplicationIfNeeded(for: request, environment: environment, launchedProcess: process)
 
         try Self.saveLaunchRecord(
             Self.launchRecord(
@@ -810,7 +810,7 @@ public struct WineRunner {
         )
     }
 
-    private func activateWineApplicationIfNeeded(for request: WineRunRequest, environment: [String: String]) {
+    private func activateWineApplicationIfNeeded(for request: WineRunRequest, environment: [String: String], launchedProcess: Process) {
         guard environment["MACWIN_DISABLE_WINE_APP_ACTIVATION"] != "1" else {
             return
         }
@@ -1035,19 +1035,44 @@ public struct WineRunner {
         end repeat
         """
         }
+        // No helper runs from launch/smoke. The exact pending operation is
+        // consumed only by the visible user action; parent preflights never gate it.
+        // Bind to the original live Process and PID, rather than another Wine app.
+        let scopedScript = "set targetPID to \(launchedProcess.processIdentifier)\n" + script.replacingOccurrences(
+            of: "repeat with p in every process",
+            with: "repeat with p in (every process whose unix id is targetPID)"
+        )
+        WindowControlPermission.prepare(isCurrent: { launchedProcess.isRunning }) {
+            Self.runWindowControlScript(scopedScript)
+        }
+    }
+
+    private static func runWindowControlScript(_ script: String) {
         let activationProcess = Process()
         activationProcess.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
-        activationProcess.arguments = ["-e", script]
+        activationProcess.arguments = ["-e", WindowControlPermission.preservingPermissionErrors(in: script)]
         activationProcess.standardOutput = FileHandle.nullDevice
-        activationProcess.standardError = FileHandle.nullDevice
+        let errorPipe = Pipe()
+        activationProcess.standardError = errorPipe
+        // Drain concurrently, so a full stderr pipe cannot hang the helper.
+        // Its actual exit/status remains authoritative even after preflight.
+
         do {
             try activationProcess.run()
+            Thread.detachNewThread {
+                let data = errorPipe.fileHandleForReading.readDataToEndOfFile()
+                activationProcess.waitUntilExit()
+                guard activationProcess.terminationStatus != 0 else { return }
+                let stderr = String(decoding: data, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
+                let recovery = WindowControlPermission.recovery(for: WindowControlPermission.classify(stderr: stderr))
+                WindowControlPermission.report("\(recovery) Wine remains usable manually. Helper exit \(activationProcess.terminationStatus): \(stderr.prefix(1200))")
+            }
             Self.scheduleTermination(
                 of: activationProcess,
                 after: Self.wineApplicationActivationTimeout
             )
         } catch {
-            return
+            WindowControlPermission.report("Could not start optional window control: \(error.localizedDescription). Select the Wine window manually.")
         }
     }
 

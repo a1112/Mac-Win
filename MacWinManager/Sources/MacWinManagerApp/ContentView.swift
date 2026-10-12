@@ -37,6 +37,13 @@ struct ContentView: View {
         }
         .background(WindowChromeConfigurator(leadingInset: $titlebarLeadingInset))
         .ignoresSafeArea(.container, edges: .top)
+        .onAppear { store.windowControlRequestID = WindowControlPermission.pendingRequestID }
+        .onReceive(NotificationCenter.default.publisher(for: WindowControlPermission.pendingNotification).receive(on: RunLoop.main)) { _ in
+            store.windowControlRequestID = WindowControlPermission.pendingRequestID
+        }
+        .onReceive(NotificationCenter.default.publisher(for: WindowControlPermission.warningNotification).receive(on: RunLoop.main)) { notification in
+            if let message = notification.object as? String { store.windowControlWarning = message }
+        }
         .sheet(item: Binding(get: {
             store.pendingExternalExecutable
         }, set: { value in
@@ -627,10 +634,14 @@ struct StatusBar: View {
                 ProgressView()
                     .controlSize(.small)
             }
-                Text(store.lastError ?? store.statusMessage)
+                Text(store.lastError ?? store.windowControlWarning ?? store.statusMessage)
                     .font(.callout)
                     .lineLimit(1)
-                    .foregroundStyle(store.lastError == nil ? Color.macWinReadableSecondaryText : Color.red)
+                    .foregroundStyle(store.lastError != nil ? Color.red : store.windowControlWarning != nil ? Color.orange : Color.macWinReadableSecondaryText)
+            if store.windowControlRequestID != nil || store.windowControlWarning != nil {
+                Button("Window control") { store.selection = .settings }
+                    .help("Review the optional window-control failure and permission recovery steps")
+            }
             Spacer()
             Button {
                 store.openLogs()
@@ -6793,6 +6804,10 @@ struct SettingsView: View {
                             }
                         }
                         .pickerStyle(.segmented)
+                    }
+
+                    SectionPanel(title: "Window control") {
+                        WindowControlRecoveryView()
                     }
 
                     SectionPanel(title: store.text(.keepSystemAwake)) {

@@ -101,6 +101,8 @@ final class MacWinStore: ObservableObject {
     @Published var nativeUIApplicationMatrixReport = NativeUIApplicationMatrixReport.empty(rootPath: MacWinPaths().root.path)
     @Published var representativeAcceptanceReport = RepresentativeSoftwareAcceptanceReport.empty(rootPath: MacWinPaths().root.path)
     @Published var lastError: String?
+    @Published var windowControlWarning: String?
+    @Published var windowControlRequestID: UUID?
     @Published var runningItems: [RunningDesktopItem] = []
     @Published var recentLogs: [LogFileItem] = []
     @Published var logIssueReport = LogIssueReport(logs: [], topIssues: [], recentFailures: [])

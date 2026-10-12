@@ -1381,7 +1381,7 @@ class MigrationBaselineWorkflowTests(unittest.TestCase):
                 names.append(match.group(1) or f"{path.name}:{line_number}")
         self.assertEqual(
             len(names),
-            492,
+            500,  # 492 existing tests + 8 window-control permission regressions.
             "the migration baseline test-name fixture must cover every current @Test",
         )
         return names
