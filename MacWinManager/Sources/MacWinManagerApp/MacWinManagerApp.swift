@@ -6,8 +6,8 @@ import SwiftUI
 
 @MainActor
 final class MacWinAppDelegate: NSObject, NSApplicationDelegate {
-    private let minimumMainWindowSize = NSSize(width: 1040, height: 700)
-    private let defaultMainWindowSize = NSSize(width: 1280, height: 800)
+    private let minimumMainWindowSize = NSSize(width: 960, height: 620)
+    private let defaultMainWindowSize = NSSize(width: 1080, height: 720)
     private var fallbackWindowController: NSWindowController?
 
     func applicationWillFinishLaunching(_ notification: Notification) {
@@ -1531,7 +1531,7 @@ struct MacWinManagerApp: App {
             }
         }
         .windowStyle(.hiddenTitleBar)
-        .defaultSize(width: 1280, height: 800)
+        .defaultSize(width: 1080, height: 720)
             .commands {
                 CommandGroup(replacing: .newItem) {
                 Button(store.text(.createBottle)) {
