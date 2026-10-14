@@ -86,11 +86,6 @@ final class MacWinAppDelegate: NSObject, NSApplicationDelegate {
             }
 
             window.identifier = NSUserInterfaceItemIdentifier("macwin-main-window")
-            if window.frame.width < self.minimumMainWindowSize.width
-                || window.frame.height < self.minimumMainWindowSize.height {
-                window.setContentSize(self.defaultMainWindowSize)
-                window.center()
-            }
             _ = MacWinWindowChrome.configure(window)
             window.makeKeyAndOrderFront(nil)
             application.activate(ignoringOtherApps: true)
