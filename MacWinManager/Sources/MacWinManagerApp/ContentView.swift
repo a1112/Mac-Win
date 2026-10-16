@@ -138,8 +138,8 @@ private final class WindowChromeProbeView: NSView {
 
 @MainActor
 enum MacWinWindowChrome {
-    private static let defaultContentSize = NSSize(width: 1280, height: 800)
-    private static let minimumContentSize = NSSize(width: 1040, height: 700)
+    private static let defaultContentSize = NSSize(width: 1080, height: 720)
+    private static let minimumContentSize = NSSize(width: 960, height: 620)
     private static let windowCornerRadius: CGFloat = 0
     private static let initiallySizedWindows = NSHashTable<NSWindow>.weakObjects()
     static let sidebarWidth: CGFloat = 216
@@ -152,11 +152,28 @@ enum MacWinWindowChrome {
         let isFullScreen = window.styleMask.contains(.fullScreen)
         configureContentSurface(for: window)
 
-        if !initiallySizedWindows.contains(window),
-           window.frame.width < minimumContentSize.width
-            || window.frame.height < minimumContentSize.height {
-            window.setContentSize(defaultContentSize)
-            window.center()
+        if !initiallySizedWindows.contains(window) {
+            // Restore before applying a nominal minimum, including frames saved on smaller displays.
+            window.minSize = .zero
+            window.contentMinSize = .zero
+            let restored = window.setFrameUsingName("MacWinMainWindow")
+            if !restored && (window.frame.width <= 1 || window.frame.height <= 1) {
+                window.setContentSize(defaultContentSize)
+                window.center()
+            }
+            _ = window.setFrameAutosaveName("MacWinMainWindow")
+        }
+        if !isFullScreen && !window.isZoomed, let screen = window.screen ?? NSScreen.main {
+            let frame = CompactWindowGeometry.fittedFrame(
+                window.frame, screens: NSScreen.screens.map(\.visibleFrame), fallback: screen.visibleFrame
+            )
+            if frame != window.frame { window.setFrame(frame, display: false) }
+            let content = window.contentRect(forFrameRect: window.frame).size
+            let safeContent = window.contentRect(forFrameRect: screen.visibleFrame.insetBy(dx: 24, dy: 24)).size
+            window.contentMinSize = CompactWindowGeometry.minimumContentSize(
+                nominal: minimumContentSize, available: safeContent, current: content
+            )
+            window.minSize = window.frameRect(forContentRect: NSRect(origin: .zero, size: window.contentMinSize)).size
         }
         initiallySizedWindows.add(window)
         if !window.isVisible {
@@ -210,8 +227,6 @@ enum MacWinWindowChrome {
         window.isMovable = true
         window.isRestorable = false
         window.hasShadow = false
-        window.minSize = minimumContentSize
-        window.contentMinSize = minimumContentSize
         window.minFullScreenContentSize = minimumContentSize
         window.backgroundColor = .windowBackgroundColor
         window.isOpaque = true
