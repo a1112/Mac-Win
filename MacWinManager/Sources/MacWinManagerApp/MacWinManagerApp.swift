@@ -86,7 +86,7 @@ final class MacWinAppDelegate: NSObject, NSApplicationDelegate {
             }
 
             window.identifier = NSUserInterfaceItemIdentifier("macwin-main-window")
-            _ = MacWinWindowChrome.configure(window)
+            MacWinWindowChrome.configure(window)
             window.makeKeyAndOrderFront(nil)
             application.activate(ignoringOtherApps: true)
             self.scheduleBootstrap()
@@ -96,7 +96,7 @@ final class MacWinAppDelegate: NSObject, NSApplicationDelegate {
     private func createFallbackMainWindow(in application: NSApplication) {
         if let existingWindow = managedMainWindow(in: application) {
             existingWindow.identifier = NSUserInterfaceItemIdentifier("macwin-main-window")
-            _ = MacWinWindowChrome.configure(existingWindow)
+            MacWinWindowChrome.configure(existingWindow)
             existingWindow.makeKeyAndOrderFront(nil)
             application.activate(ignoringOtherApps: true)
             scheduleBootstrap()
@@ -104,7 +104,7 @@ final class MacWinAppDelegate: NSObject, NSApplicationDelegate {
         }
         guard fallbackWindowController == nil else { return }
 
-        let window = NSWindow(
+        let window = MacWinFramelessWindow(
             contentRect: NSRect(origin: .zero, size: defaultMainWindowSize),
             styleMask: [
                 .titled,
@@ -120,7 +120,7 @@ final class MacWinAppDelegate: NSObject, NSApplicationDelegate {
         window.contentView = NSHostingView(rootView: MacWinRootView(store: .shared))
         window.minSize = minimumMainWindowSize
         window.center()
-        _ = MacWinWindowChrome.configure(window)
+        MacWinWindowChrome.configure(window)
 
         let controller = NSWindowController(window: window)
         fallbackWindowController = controller
@@ -1480,7 +1480,8 @@ private struct MacWinRootView: View {
         ContentView()
             .overlay(alignment: .bottomTrailing) { ResourceConsumptionView().padding(12) }
             .environmentObject(store)
-            .frame(minWidth: 1040, minHeight: 700)
+            // AppKit restores and clamps the user's frame; do not impose the old 1040×700 minimum.
+            .frame(minWidth: 320, minHeight: 240)
             .ignoresSafeArea(.container, edges: .top)
             .onOpenURL { url in
                 Task { await store.handleExternalExecutableOpen(url) }

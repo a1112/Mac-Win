@@ -9,11 +9,11 @@ private extension Color {
 
 struct ContentView: View {
     @EnvironmentObject private var store: MacWinStore
-    @State private var titlebarLeadingInset: CGFloat = 84
+    @StateObject private var windowReference = MacWinWindowReference()
 
     var body: some View {
         VStack(spacing: 0) {
-            UnifiedTitleBar(leadingInset: titlebarLeadingInset)
+            UnifiedTitleBar(windowReference: windowReference)
                 .frame(height: MacWinWindowChrome.titlebarHeight)
             HStack(spacing: 0) {
                 SidebarView()
@@ -32,10 +32,10 @@ struct ContentView: View {
             }
         }
         .background {
-            VisualEffectBackground(material: .windowBackground, blendingMode: .withinWindow)
+            VisualEffectBackground(material: .windowBackground, blendingMode: .behindWindow)
                 .allowsHitTesting(false)
         }
-        .background(WindowChromeConfigurator(leadingInset: $titlebarLeadingInset))
+        .background(WindowChromeConfigurator(reference: windowReference))
         .ignoresSafeArea(.container, edges: .top)
         .sheet(item: Binding(get: {
             store.pendingExternalExecutable
@@ -48,268 +48,21 @@ struct ContentView: View {
     }
 }
 
-private struct WindowChromeConfigurator: NSViewRepresentable {
-    @Binding var leadingInset: CGFloat
-
-    func makeCoordinator() -> Coordinator {
-        Coordinator(leadingInset: $leadingInset)
-    }
-
-    func makeNSView(context: Context) -> NSView {
-        let view = WindowChromeProbeView()
-        DispatchQueue.main.async {
-            context.coordinator.observe(view.window)
-            context.coordinator.configure(view.window)
-        }
-        return view
-    }
-
-    func updateNSView(_ nsView: NSView, context: Context) {
-        context.coordinator.leadingInset = $leadingInset
-        DispatchQueue.main.async {
-            context.coordinator.observe(nsView.window)
-            context.coordinator.configure(nsView.window)
-        }
-    }
-
-    static func dismantleNSView(_ nsView: NSView, coordinator: Coordinator) {
-        coordinator.stopObserving()
-    }
-
-    @MainActor
-    final class Coordinator {
-        var leadingInset: Binding<CGFloat>
-        private weak var window: NSWindow?
-        private var observers: [NSObjectProtocol] = []
-
-        init(leadingInset: Binding<CGFloat>) {
-            self.leadingInset = leadingInset
-        }
-
-        func observe(_ newWindow: NSWindow?) {
-            guard window !== newWindow else { return }
-            stopObserving()
-            window = newWindow
-            guard let newWindow else { return }
-
-            let center = NotificationCenter.default
-            for name in [
-                NSWindow.didEnterFullScreenNotification,
-                NSWindow.didExitFullScreenNotification,
-                NSWindow.didResizeNotification,
-                NSWindow.didMoveNotification,
-                NSWindow.didChangeScreenNotification,
-                NSWindow.didBecomeKeyNotification,
-                NSWindow.didResignKeyNotification
-            ] {
-                observers.append(center.addObserver(
-                    forName: name,
-                    object: newWindow,
-                    queue: .main
-                ) { [weak self, weak newWindow] _ in
-                    Task { @MainActor in
-                        self?.configure(newWindow)
-                    }
-                })
-            }
-        }
-
-        func configure(_ window: NSWindow?) {
-            let measuredInset = MacWinWindowChrome.configure(window)
-            if abs(leadingInset.wrappedValue - measuredInset) > 0.5 {
-                leadingInset.wrappedValue = measuredInset
-            }
-        }
-
-        func stopObserving() {
-            let center = NotificationCenter.default
-            observers.forEach(center.removeObserver)
-            observers.removeAll()
-            window = nil
-        }
-    }
-}
-
-private final class WindowChromeProbeView: NSView {
-    override func hitTest(_ point: NSPoint) -> NSView? {
-        nil
-    }
-}
-
-@MainActor
-enum MacWinWindowChrome {
-    private static let defaultContentSize = NSSize(width: 1080, height: 720)
-    private static let minimumContentSize = NSSize(width: 960, height: 620)
-    private static let windowCornerRadius: CGFloat = 0
-    private static let initiallySizedWindows = NSHashTable<NSWindow>.weakObjects()
-    static let sidebarWidth: CGFloat = 216
-    static let titlebarHeight: CGFloat = 48
-
-    static func configure(_ window: NSWindow?) -> CGFloat {
-        guard let window else { return 84 }
-
-        configureWindowBehavior(window)
-        let isFullScreen = window.styleMask.contains(.fullScreen)
-        configureContentSurface(for: window)
-
-        if !initiallySizedWindows.contains(window) {
-            // Restore before applying a nominal minimum, including frames saved on smaller displays.
-            window.minSize = .zero
-            window.contentMinSize = .zero
-            let restored = window.setFrameUsingName("MacWinMainWindow")
-            if !restored && (window.frame.width <= 1 || window.frame.height <= 1) {
-                window.setContentSize(defaultContentSize)
-                window.center()
-            }
-            _ = window.setFrameAutosaveName("MacWinMainWindow")
-        }
-        if !isFullScreen && !window.isZoomed, let screen = window.screen ?? NSScreen.main {
-            let frame = CompactWindowGeometry.fittedFrame(
-                window.frame, screens: NSScreen.screens.map(\.visibleFrame), fallback: screen.visibleFrame
-            )
-            if frame != window.frame { window.setFrame(frame, display: false) }
-            let content = window.contentRect(forFrameRect: window.frame).size
-            let safeContent = window.contentRect(forFrameRect: screen.visibleFrame.insetBy(dx: 24, dy: 24)).size
-            window.contentMinSize = CompactWindowGeometry.minimumContentSize(
-                nominal: minimumContentSize, available: safeContent, current: content
-            )
-            window.minSize = window.frameRect(forContentRect: NSRect(origin: .zero, size: window.contentMinSize)).size
-        }
-        initiallySizedWindows.add(window)
-        if !window.isVisible {
-            window.makeKeyAndOrderFront(nil)
-            NSApp.activate(ignoringOtherApps: true)
-        }
-
-        if !isFullScreen {
-            for buttonType in [
-                NSWindow.ButtonType.closeButton,
-                .miniaturizeButton,
-                .zoomButton
-            ] {
-                let button = window.standardWindowButton(buttonType)
-                button?.isHidden = false
-                button?.alphaValue = 1
-                button?.isEnabled = true
-                button?.refusesFirstResponder = true
-            }
-        }
-
-        guard !isFullScreen,
-              let zoomButton = window.standardWindowButton(.zoomButton),
-              let buttonContainer = zoomButton.superview,
-              let contentView = window.contentView else {
-            return 16
-        }
-        let buttonFrame = buttonContainer.convert(zoomButton.frame, to: contentView)
-        return max(84, buttonFrame.maxX + 12)
-    }
-
-    private static func configureWindowBehavior(_ window: NSWindow) {
-        window.styleMask.formUnion([
-            .titled,
-            .closable,
-            .miniaturizable,
-            .resizable,
-            .fullSizeContentView
-        ])
-        window.styleMask.remove(.unifiedTitleAndToolbar)
-        window.title = ""
-        window.subtitle = ""
-        window.titleVisibility = .hidden
-        window.titlebarAppearsTransparent = true
-        window.titlebarSeparatorStyle = .none
-        window.toolbar = nil
-        window.setContentBorderThickness(0, for: .minY)
-        window.setContentBorderThickness(0, for: .maxY)
-        window.isReleasedWhenClosed = false
-        window.isMovableByWindowBackground = true
-        window.isMovable = true
-        window.isRestorable = false
-        window.hasShadow = false
-        window.minFullScreenContentSize = minimumContentSize
-        window.backgroundColor = .windowBackgroundColor
-        window.isOpaque = true
-        window.alphaValue = 1
-        window.hidesOnDeactivate = false
-        window.acceptsMouseMovedEvents = true
-        window.ignoresMouseEvents = false
-        window.tabbingMode = .disallowed
-        window.animationBehavior = .documentWindow
-        window.autorecalculatesKeyViewLoop = true
-        window.collectionBehavior.insert(.fullScreenPrimary)
-        window.collectionBehavior.insert(.moveToActiveSpace)
-        window.collectionBehavior.remove(.fullScreenAuxiliary)
-    }
-
-    private static func configureContentSurface(for window: NSWindow) {
-        guard let contentView = window.contentView else { return }
-        window.isOpaque = true
-        window.backgroundColor = .windowBackgroundColor
-
-        contentView.wantsLayer = true
-        contentView.layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
-        contentView.layer?.cornerCurve = .continuous
-        contentView.layer?.cornerRadius = 0
-        contentView.layer?.masksToBounds = false
-        contentView.layer?.borderWidth = 0
-        contentView.layer?.borderColor = nil
-        contentView.layer?.isOpaque = true
-        window.invalidateShadow()
-    }
-}
-
-private struct WindowDragRegion: NSViewRepresentable {
-    func makeNSView(context: Context) -> NSView {
-        DraggableTitlebarView()
-    }
-
-    func updateNSView(_ nsView: NSView, context: Context) {}
-}
-
-private final class DraggableTitlebarView: NSView {
-    override var mouseDownCanMoveWindow: Bool { true }
-    override var acceptsFirstResponder: Bool { false }
-    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
-
-    override func mouseDown(with event: NSEvent) {
-        guard event.type == .leftMouseDown, let window else {
-            super.mouseDown(with: event)
-            return
-        }
-        if event.clickCount == 2 {
-            switch UserDefaults.standard.string(forKey: "AppleActionOnDoubleClick") {
-            case "Minimize":
-                window.miniaturize(nil)
-            case "None":
-                break
-            default:
-                window.zoom(nil)
-            }
-        } else {
-            window.performDrag(with: event)
-        }
-    }
-}
-
 struct UnifiedTitleBar: View {
     @EnvironmentObject private var store: MacWinStore
-    let leadingInset: CGFloat
+    let windowReference: MacWinWindowReference
 
     var body: some View {
         ZStack {
             WindowDragRegion()
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .contentShape(Rectangle())
-                .allowsHitTesting(false)
                 .accessibilityHidden(true)
-                .zIndex(-1)
 
             HStack(spacing: 0) {
                 HStack(spacing: 9) {
-                    Color.clear
-                        .frame(width: leadingInset)
-                        .allowsHitTesting(false)
+                    MacWinWindowControls(reference: windowReference)
+                        .padding(.leading, 12)
 
                     MacWinAppIconImage(size: 25)
                         .allowsHitTesting(false)
@@ -374,12 +127,14 @@ struct UnifiedTitleBar: View {
                     }
 
                     Button {
-                        NSApp.keyWindow?.toggleFullScreen(nil)
+                        windowReference.perform(.fullScreen)
                     } label: {
                         Image(systemName: "arrow.up.left.and.arrow.down.right")
                     }
                     .buttonStyle(TitlebarIconButtonStyle())
                     .help(store.text(.toggleFullScreen))
+                    .accessibilityLabel(store.text(.toggleFullScreen))
+                    .keyboardShortcut("f", modifiers: [.command, .control])
 
                     if let engine = activeEngine {
                         Text(engine.wineVersion)
@@ -491,25 +246,6 @@ private struct TitlebarIconButtonStyle: ButtonStyle {
                     .fill(Color.primary.opacity(configuration.isPressed ? 0.12 : 0.045))
             }
             .opacity(isEnabled ? 1 : 0.42)
-    }
-}
-
-private struct VisualEffectBackground: NSViewRepresentable {
-    let material: NSVisualEffectView.Material
-    let blendingMode: NSVisualEffectView.BlendingMode
-
-    func makeNSView(context: Context) -> NSVisualEffectView {
-        let view = NSVisualEffectView()
-        view.material = material
-        view.blendingMode = blendingMode
-        view.state = .followsWindowActiveState
-        return view
-    }
-
-    func updateNSView(_ nsView: NSVisualEffectView, context: Context) {
-        nsView.material = material
-        nsView.blendingMode = blendingMode
-        nsView.state = .followsWindowActiveState
     }
 }
 
@@ -6791,6 +6527,7 @@ struct LogLaunchContextView: View {
 
 struct SettingsView: View {
     @EnvironmentObject private var store: MacWinStore
+    @ObservedObject private var effects = MacWinWindowEffects.shared
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -6808,6 +6545,18 @@ struct SettingsView: View {
                             }
                         }
                         .pickerStyle(.segmented)
+                    }
+
+                    SectionPanel(title: store.language == .en ? "Window appearance" : "窗口外观") {
+                        Toggle(store.language == .en ? "Blur the background behind windows" : "模糊窗口背后的背景", isOn: Binding(
+                            get: { effects.enabled },
+                            set: { effects.setEnabled($0) }
+                        ))
+                        Text(store.language == .en
+                            ? "Reduce Transparency and Increase Contrast use a solid background."
+                            : "开启系统“降低透明度”或“增强对比度”时使用纯色背景。")
+                            .font(.caption)
+                            .foregroundStyle(Color.macWinReadableSecondaryText)
                     }
 
                     SectionPanel(title: store.text(.keepSystemAwake)) {
@@ -6950,6 +6699,7 @@ struct EmptyState: View {
 struct ExternalExecutableOpenView: View {
     @EnvironmentObject private var store: MacWinStore
     var request: ExternalExecutableRequest
+    @StateObject private var windowReference = MacWinWindowReference()
     @State private var selectedBottleId: String = ""
 
     var body: some View {
@@ -6987,6 +6737,7 @@ struct ExternalExecutableOpenView: View {
                 } label: {
                     Text(store.text(.cancel))
                 }
+                .keyboardShortcut(.cancelAction)
                 Spacer()
                 Button {
                     guard let bottle = selectedBottle else { return }
@@ -7005,6 +6756,15 @@ struct ExternalExecutableOpenView: View {
         }
         .padding(22)
         .frame(width: 620)
+        .background(VisualEffectBackground(material: .windowBackground, blendingMode: .behindWindow))
+        .background(WindowChromeConfigurator(reference: windowReference, role: .sheet))
+        .onExitCommand { store.dismissPendingExternalExecutable() }
+        .background {
+            Button("") { store.dismissPendingExternalExecutable() }
+                .keyboardShortcut("w")
+                .hidden()
+                .accessibilityHidden(true)
+        }
         .onAppear {
             selectedBottleId = store.selectedBottleId ?? store.defaultPerformanceBottle?.id ?? store.bottles.first?.id ?? ""
         }

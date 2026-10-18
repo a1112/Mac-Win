@@ -2,6 +2,27 @@ import XCTest
 @testable import MacWinCore
 
 final class CompactWindowGeometryTests: XCTestCase {
+    func testScreenTransitionKeepsReachableStraddlingUserFrame() {
+        let left = CGRect(x: -1280, y: 25, width: 1280, height: 775)
+        let right = CGRect(x: 0, y: 25, width: 1440, height: 875)
+        let frame = CGRect(x: -380, y: 160, width: 900, height: 620)
+        XCTAssertEqual(CompactWindowGeometry.recoverDisconnectedFrame(frame, screens: [left, right], fallback: right), frame)
+    }
+
+    func testTopologyChangeRecoversWindowWhoseTitlebarIsNoLongerReachable() {
+        let screen = CGRect(x: 0, y: 25, width: 1440, height: 875)
+        let frame = CGRect(x: 200, y: 870, width: 800, height: 600)
+        let repaired = CompactWindowGeometry.recoverDisconnectedFrame(frame, screens: [screen], fallback: screen)
+        XCTAssertEqual(repaired.size, frame.size)
+        XCTAssertTrue(screen.insetBy(dx: 24, dy: 24).contains(repaired))
+    }
+
+    func testTopologyChangeKeepsPartiallyOffscreenWindowWithReachableTitlebar() {
+        let screen = CGRect(x: -1280, y: 25, width: 1280, height: 775)
+        let frame = CGRect(x: -1600, y: 150, width: 900, height: 600)
+        XCTAssertEqual(CompactWindowGeometry.recoverDisconnectedFrame(frame, screens: [screen], fallback: screen), frame)
+    }
+
     func testSavedSmallFrameAndMinimumRemainSmallOnLargeScreen() {
         let screen = CGRect(x: 0, y: 25, width: 1440, height: 850)
         let saved = CGRect(x: 100, y: 100, width: 640, height: 400)

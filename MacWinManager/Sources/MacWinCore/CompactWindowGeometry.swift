@@ -24,6 +24,19 @@ public enum CompactWindowGeometry {
                height: min(nominal.height, max(1, available.height), max(1, current.height)))
     }
 
+    /// A display topology change may strand a window. Keep user-placed frames,
+    /// including frames spanning displays, whenever a usable titlebar is visible.
+    /// Ordinary move/resize events must not call fittedFrame and snap the window.
+    public static func recoverDisconnectedFrame(_ frame: CGRect, screens: [CGRect], fallback: CGRect) -> CGRect {
+        let titlebar = CGRect(x: frame.minX, y: frame.maxY - min(48, frame.height),
+                              width: frame.width, height: min(48, frame.height))
+        if screens.contains(where: {
+            let visible = $0.intersection(titlebar)
+            return !visible.isNull && visible.width >= min(80, frame.width) && visible.height >= min(24, frame.height)
+        }) { return frame }
+        return fittedFrame(frame, screens: screens, fallback: fallback)
+    }
+
     private static func area(_ rect: CGRect) -> CGFloat {
         rect.isNull || rect.isEmpty ? 0 : rect.width * rect.height
     }
